@@ -2229,7 +2229,7 @@ static void sde_connector_check_status_work(struct work_struct *work)
 
 	if(gpio_is_valid(flag_gpio)){
 		err_flag = gpio_get_value(flag_gpio);
-		SDE_ERROR("Check err_flag status %d\n", err_flag);
+		SDE_DEBUG("Check err_flag status %d\n", err_flag);
 	}
 
 	mutex_lock(&conn->lock);

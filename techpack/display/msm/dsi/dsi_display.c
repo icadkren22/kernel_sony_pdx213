@@ -3821,6 +3821,12 @@ void dsi_panel_driver_oled_short_det_init_works(struct dsi_display *display)
 	}
 	short_det = &display->panel->spec_pdata->short_det;
 
+	if (short_det->irq_num > 0) {
+		DSI_DEBUG("%s: Short detection already initialized (irq=%d)\n",
+			__func__, short_det->irq_num);
+		return;
+	}
+
 	INIT_DELAYED_WORK(&short_det->check_work,
 				dsi_panel_driver_oled_short_check_worker);
 
@@ -3840,6 +3846,7 @@ void dsi_panel_driver_oled_short_det_init_works(struct dsi_display *display)
 			SHORT_IRQF_FLAGS, "disp_err_fg_gpio", display);
 	if (rc < 0) {
 		DSI_ERR("Failed to irq request rc=%d\n", rc);
+		short_det->irq_num = 0;
 		return;
 	}
 
