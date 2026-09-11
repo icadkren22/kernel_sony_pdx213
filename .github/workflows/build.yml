@@ -40,7 +40,9 @@ jobs:
       - name: Download and Setup Clang (clang-r530567)
         run: |
           mkdir -p clang
-          curl -LSs https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r530567.tar.gz | tar -xz -C clang
+          curl --retry 5 --retry-delay 3 --retry-all-errors -fSLo clang.tar.gz https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r530567.tar.gz
+          tar -xzf clang.tar.gz -C clang
+          rm -f clang.tar.gz
           echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
 
       - name: Verify Clang Version
