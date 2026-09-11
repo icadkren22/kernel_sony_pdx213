@@ -1,0 +1,129 @@
+name: Build Kernel
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+      - main
+
+jobs:
+  build:
+    name: Build Kernel (PDX213)
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc \
+            bison \
+            ca-certificates \
+            curl \
+            flex \
+            gcc \
+            git \
+            libssl-dev \
+            libelf-dev \
+            make \
+            patch \
+            python3 \
+            tar \
+            xz-utils
+
+      - name: Download and Setup Clang (clang-r450784e)
+        run: |
+          mkdir -p clang
+          curl -LSs https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/722c840a8e4d58b5ebdab62ce78eacdafd301208/clang-r450784e.tar.gz | tar -xz -C clang
+          echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
+
+      - name: Verify Clang Version
+        run: |
+          clang --version
+
+      - name: Setup ReSukiSU
+        run: |
+          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
+
+      - name: Download and Apply SUSFS Patches
+        run: |
+          # 1. Download susfs patch
+          curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/Patch/susfs_patch_to_4.19.patch" -o susfs_patch_to_4.19.patch
+          
+          # 2. Patch the susfs patch
+          patch -p0 susfs_patch_to_4.19.patch < .github/patches/patch_for_susfs_4.19.patch
+
+          # 3. Apply the patched susfs patch to the kernel
+          patch -p1 < susfs_patch_to_4.19.patch
+
+          # 4. Run inline hook patches
+          curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/susfs_inline_hook_patches.sh" | bash
+
+      - name: Build Kernel
+        run: |
+          mkdir -p out
+          make ARCH=arm64 O=out \
+            CC=clang LLVM=1 LLVM_IAS=1 CLANG_TRIPLE="aarch64-linux-gnu-" \
+            CROSS_COMPILE="aarch64-linux-gnu-" \
+            TARGET_BUILD_VARIANT=user \
+            vendor/lito-perf_defconfig KBUILD_DIFFCONFIG=pdx213_diffconfig
+
+          make ARCH=arm64 O=out \
+            CC=clang LLVM=1 LLVM_IAS=1 CLANG_TRIPLE="aarch64-linux-gnu-" \
+            CROSS_COMPILE="aarch64-linux-gnu-" \
+            TARGET_BUILD_VARIANT=user \
+            -j$(nproc --all)
+
+      - name: Download magiskboot
+        run: |
+          curl -LSs "https://raw.githubusercontent.com/Uevo001/magiskboot-linux/main/x86/magiskboot" -o magiskboot
+          chmod +x magiskboot
+
+      - name: Repack boot.img
+        run: |
+          # Decompress stock boot.img
+          gunzip -c boot_X-FLASH-ALL-8A63.img.gz > boot.img
+
+          # Unpack stock boot.img
+          mkdir -p bootimg-work
+          cp boot.img bootimg-work/
+          cd bootimg-work
+          ../magiskboot unpack boot.img
+
+          # Replace kernel with newly built Image
+          cp ../out/arch/arm64/boot/Image kernel
+
+          # Repack
+          ../magiskboot repack boot.img ../build-repacked.img
+          cd ..
+
+      - name: Prepare Artifacts
+        run: |
+          mkdir -p artifact-boot artifact-image artifact-modules
+          cp build-repacked.img artifact-boot/boot.img
+          cp out/arch/arm64/boot/Image artifact-image/Image
+          find out/ -name "*.ko" -exec cp {} artifact-modules/ \; 2>/dev/null || true
+
+      - name: Upload boot.img
+        uses: actions/upload-artifact@v4
+        with:
+          name: boot.img
+          path: artifact-boot/boot.img
+
+      - name: Upload Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: Image
+          path: artifact-image/Image
+
+      - name: Upload Kernel Modules
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-modules
+          path: artifact-modules/

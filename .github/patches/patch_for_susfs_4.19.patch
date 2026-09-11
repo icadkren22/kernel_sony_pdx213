@@ -1,0 +1,39 @@
+--- /home/ubuntu/kernel/NonGKI_Kernel_Build_2nd/Patches/Patch/susfs_patch_to_4.19.patch	2026-09-11 01:12:03.072670099 +0000
++++ /tmp/susfs_clean.patch	2026-09-11 02:56:46.324105720 +0000
+@@ -878,9 +878,9 @@
+ +				unsigned long ino = inode->i_ino;
+ +				dev_t dev = inode->i_sb->s_dev;
+ +				susfs_sus_kstat_spoof_inotify_fdinfo(&ino, &dev);
+-+				seq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:0 ",
+++				seq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:%x ",
+ +						inode_mark->wd, ino, dev,
+-+						inotify_mark_user_mask(mark));
+++						mark->mask & IN_ALL_EVENTS, mark->ignored_mask);
+ +				show_mark_fhandle(m, inode);
+ +				seq_putc(m, '\n');
+ +				iput(inode);
+@@ -908,9 +908,9 @@
+ +				if (!d_backing_inode(path.dentry)) {
+ +					goto out_path_put;
+ +				}
+-+				seq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:0 ",
+++				seq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:%x ",
+ +						inode_mark->wd, d_backing_inode(path.dentry)->i_ino, d_backing_inode(path.dentry)->i_sb->s_dev,
+-+						inotify_mark_user_mask(mark));
+++						mark->mask & IN_ALL_EVENTS, mark->ignored_mask);
+ +				show_mark_fhandle(m, d_backing_inode(path.dentry));
+ +				seq_putc(m, '\n');
+ +				path_put(&path);
+@@ -925,9 +925,9 @@
+ +		}
+ +orig_flow:
+ +#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+- 		seq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:0 ",
+- 			   inode_mark->wd, inode->i_ino, inode->i_sb->s_dev,
+- 			   inotify_mark_user_mask(mark));
++ 		/*
++ 		 * IN_ALL_EVENTS represents all of the mask bits
++ 		 * that we expose to userspace.  There is at
+ diff --git a/fs/proc/base.c b/fs/proc/base.c
+ index 78692a8..6100839 100644
+ --- a/fs/proc/base.c
