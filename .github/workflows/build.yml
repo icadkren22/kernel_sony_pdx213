@@ -80,6 +80,7 @@ jobs:
             CC=clang LLVM=1 LLVM_IAS=1 CLANG_TRIPLE="aarch64-linux-gnu-" \
             CROSS_COMPILE="aarch64-linux-gnu-" \
             TARGET_BUILD_VARIANT=user \
+            KCFLAGS="-O3" \
             -j$(nproc --all)
 
       - name: Download magiskboot
