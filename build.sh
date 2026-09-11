@@ -4,8 +4,13 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Toolchain and output paths
-CLANG_DIR="/home/ica2322/sus/clang-r530567"
+# Toolchain and output paths (use local clang if present, fallback to /home/ica2322/sus/clang-r530567)
+if [ -d "$SCRIPT_DIR/clang-r530567/bin" ]; then
+    CLANG_DIR="$SCRIPT_DIR/clang-r530567"
+else
+    CLANG_DIR="/home/ica2322/sus/clang-r530567"
+fi
+
 OUT_DIR="$SCRIPT_DIR/out"
 ARTIFACTS_DIR="$SCRIPT_DIR/build-artifacts"
 
