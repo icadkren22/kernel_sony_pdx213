@@ -985,6 +985,9 @@ endif
 # Ensure compilers do not transform certain loops into calls to wcslen()
 KBUILD_CFLAGS += $(call cc-option, -fno-builtin-wcslen)
 
+# Disable stack clash protection to prevent stack probes on fixed-size kernel stacks
+KBUILD_CFLAGS += $(call cc-option, -fno-stack-clash-protection)
+
 
 # use the deterministic mode of AR if available
 KBUILD_ARFLAGS := $(call ar-option,D)
