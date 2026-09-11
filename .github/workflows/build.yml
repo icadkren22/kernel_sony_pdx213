@@ -37,10 +37,10 @@ jobs:
             tar \
             xz-utils
 
-      - name: Download and Setup Clang (clang-r450784e)
+      - name: Download and Setup Clang (clang-r530567)
         run: |
           mkdir -p clang
-          curl -LSs https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/722c840a8e4d58b5ebdab62ce78eacdafd301208/clang-r450784e.tar.gz | tar -xz -C clang
+          curl -LSs https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r530567.tar.gz | tar -xz -C clang
           echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
 
       - name: Verify Clang Version
