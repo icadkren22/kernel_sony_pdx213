@@ -37,10 +37,10 @@ jobs:
             tar \
             xz-utils
 
-      - name: Download and Setup Clang (clang-r530567)
+      - name: Download and Setup Clang (clang-r596125)
         run: |
           mkdir -p clang
-          curl --retry 5 --retry-delay 3 --retry-all-errors -fSLo clang.tar.gz https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r530567.tar.gz
+          curl --retry 5 --retry-delay 3 --retry-all-errors -fSLo clang.tar.gz https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source/clang-r596125.tar.gz
           tar -xzf clang.tar.gz -C clang
           rm -f clang.tar.gz
           echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
