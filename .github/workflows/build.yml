@@ -2,6 +2,17 @@ name: Build Kernel
 
 on:
   workflow_dispatch:
+    inputs:
+      flavor:
+        description: 'Kernel flavor to build (all, susfs, manualhook, vanilla)'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - susfs
+          - manualhook
+          - vanilla
   push:
     branches:
       - master
@@ -9,8 +20,15 @@ on:
 
 jobs:
   build:
-    name: Build Kernel (PDX213)
+    name: Build Kernel (${{ matrix.flavor }})
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        flavor: [susfs, manualhook, vanilla]
+
+    # Only run the selected flavor if triggered manually with a single flavor, or run all 3
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.flavor == 'all' || github.event.inputs.flavor == matrix.flavor
 
     steps:
       - name: Checkout Kernel Source
@@ -49,84 +67,141 @@ jobs:
         run: |
           clang --version
 
-      - name: Setup ReSukiSU
-        run: |
-          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
-
-      - name: Download and Apply SUSFS Patches
-        run: |
-          # 1. Download susfs patch
-          curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/Patch/susfs_patch_to_4.19.patch" -o susfs_patch_to_4.19.patch
-          
-          # 2. Patch the susfs patch
-          patch -p0 susfs_patch_to_4.19.patch < .github/patches/patch_for_susfs_4.19.patch
-
-          # 3. Apply the patched susfs patch to the kernel
-          patch -p1 < susfs_patch_to_4.19.patch
-
-          # 4. Run inline hook patches
-          curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/susfs_inline_hook_patches.sh" | bash
-
-      - name: Build Kernel
-        run: |
-          mkdir -p out
-          make ARCH=arm64 O=out \
-            CC=clang LLVM=1 LLVM_IAS=1 CLANG_TRIPLE="aarch64-linux-gnu-" \
-            CROSS_COMPILE="aarch64-linux-gnu-" \
-            TARGET_BUILD_VARIANT=user \
-            vendor/lito-perf_defconfig KBUILD_DIFFCONFIG=pdx213_diffconfig
-
-          make ARCH=arm64 O=out \
-            CC=clang LLVM=1 LLVM_IAS=1 CLANG_TRIPLE="aarch64-linux-gnu-" \
-            CROSS_COMPILE="aarch64-linux-gnu-" \
-            TARGET_BUILD_VARIANT=user \
-            KCFLAGS="-O3" \
-            -j$(nproc --all)
-
       - name: Download magiskboot
         run: |
           curl -LSs "https://raw.githubusercontent.com/Uevo001/magiskboot-linux/main/x86/magiskboot" -o magiskboot
           chmod +x magiskboot
 
-      - name: Repack boot.img
+      # Setup flavor: SUSFS
+      - name: Setup SUSFS & ReSukiSU
+        if: matrix.flavor == 'susfs'
         run: |
-          # Decompress stock boot.img
-          gunzip -c boot_X-FLASH-ALL-8A63.img.gz > boot.img
+          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
+          curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/Patch/susfs_patch_to_4.19.patch" -o susfs_patch_to_4.19.patch
+          patch -p0 susfs_patch_to_4.19.patch < .github/patches/patch_for_susfs_4.19.patch
+          patch -p1 < susfs_patch_to_4.19.patch
+          curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/susfs_inline_hook_patches.sh" | bash
 
-          # Unpack stock boot.img
-          mkdir -p bootimg-work
-          cp boot.img bootimg-work/
-          cd bootimg-work
-          ../magiskboot unpack boot.img
-
-          # Replace kernel with newly built Image
-          cp ../out/arch/arm64/boot/Image kernel
-
-          # Repack
-          ../magiskboot repack boot.img ../build-repacked.img
-          cd ..
-
-      - name: Prepare Artifacts
+      # Setup flavor: Manual Hook
+      - name: Setup KernelSU Manual Hook
+        if: matrix.flavor == 'manualhook'
         run: |
-          mkdir -p artifact-boot artifact-image artifact-modules
-          cp build-repacked.img artifact-boot/boot.img
-          cp out/arch/arm64/boot/Image artifact-image/Image
+          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
+          patch -p1 < .github/patches/manualhook.patch
+
+      # Setup flavor: Vanilla
+      - name: Setup Vanilla
+        if: matrix.flavor == 'vanilla'
+        run: |
+          echo "Building clean vanilla kernel without KernelSU hooks"
+
+      # Helper Function / Build Steps
+      - name: Build & Repack Kernel
+        run: |
+          mkdir -p out artifact-boot artifact-image artifact-modules
+          gunzip -c boot_X-FLASH-ALL-8A63.img.gz > stock_boot.img
+
+          repack_kernel() {
+            local variant_name="$1"
+            mkdir -p "bootimg-work-${variant_name}"
+            cp stock_boot.img "bootimg-work-${variant_name}/boot.img"
+            cd "bootimg-work-${variant_name}"
+            ../magiskboot unpack boot.img
+            cp ../out/arch/arm64/boot/Image kernel
+            ../magiskboot repack boot.img "../artifact-boot/boot-${variant_name}.img"
+            cd ..
+            rm -rf "bootimg-work-${variant_name}"
+            cp out/arch/arm64/boot/Image "artifact-image/Image-${variant_name}"
+          }
+
+          if [ "${{ matrix.flavor }}" = "susfs" ]; then
+            # 1. Build Minimal SUSFS
+            echo "=== Building SUSFS (Minimal) ==="
+            make ARCH=arm64 O=out \
+              CC=clang LLVM=1 LLVM_IAS=1 CLANG_TRIPLE="aarch64-linux-gnu-" \
+              CROSS_COMPILE="aarch64-linux-gnu-" \
+              TARGET_BUILD_VARIANT=user \
+              vendor/lito-perf_defconfig KBUILD_DIFFCONFIG="pdx213_diffconfig ksu_susfs_min.config"
+
+            make ARCH=arm64 O=out \
+              CC=clang LLVM=1 LLVM_IAS=1 CLANG_TRIPLE="aarch64-linux-gnu-" \
+              CROSS_COMPILE="aarch64-linux-gnu-" \
+              TARGET_BUILD_VARIANT=user \
+              KCFLAGS="-O3" \
+              -j$(nproc --all)
+
+            repack_kernel "susfs-min"
+
+            # 2. Incremental Build Full SUSFS (re-uses existing out/ object files)
+            echo "=== Incremental Building SUSFS (Full) ==="
+            make ARCH=arm64 O=out \
+              CC=clang LLVM=1 LLVM_IAS=1 CLANG_TRIPLE="aarch64-linux-gnu-" \
+              CROSS_COMPILE="aarch64-linux-gnu-" \
+              TARGET_BUILD_VARIANT=user \
+              vendor/lito-perf_defconfig KBUILD_DIFFCONFIG="pdx213_diffconfig ksu_susfs_full.config"
+
+            make ARCH=arm64 O=out \
+              CC=clang LLVM=1 LLVM_IAS=1 CLANG_TRIPLE="aarch64-linux-gnu-" \
+              CROSS_COMPILE="aarch64-linux-gnu-" \
+              TARGET_BUILD_VARIANT=user \
+              KCFLAGS="-O3" \
+              -j$(nproc --all)
+
+            repack_kernel "susfs-full"
+
+          elif [ "${{ matrix.flavor }}" = "manualhook" ]; then
+            echo "=== Building Manual Hook ==="
+            make ARCH=arm64 O=out \
+              CC=clang LLVM=1 LLVM_IAS=1 CLANG_TRIPLE="aarch64-linux-gnu-" \
+              CROSS_COMPILE="aarch64-linux-gnu-" \
+              TARGET_BUILD_VARIANT=user \
+              vendor/lito-perf_defconfig KBUILD_DIFFCONFIG="pdx213_diffconfig ksu_manual.config"
+
+            make ARCH=arm64 O=out \
+              CC=clang LLVM=1 LLVM_IAS=1 CLANG_TRIPLE="aarch64-linux-gnu-" \
+              CROSS_COMPILE="aarch64-linux-gnu-" \
+              TARGET_BUILD_VARIANT=user \
+              KCFLAGS="-O3" \
+              -j$(nproc --all)
+
+            repack_kernel "manualhook"
+
+          elif [ "${{ matrix.flavor }}" = "vanilla" ]; then
+            echo "=== Building Vanilla ==="
+            make ARCH=arm64 O=out \
+              CC=clang LLVM=1 LLVM_IAS=1 CLANG_TRIPLE="aarch64-linux-gnu-" \
+              CROSS_COMPILE="aarch64-linux-gnu-" \
+              TARGET_BUILD_VARIANT=user \
+              vendor/lito-perf_defconfig KBUILD_DIFFCONFIG="pdx213_diffconfig"
+
+            make ARCH=arm64 O=out \
+              CC=clang LLVM=1 LLVM_IAS=1 CLANG_TRIPLE="aarch64-linux-gnu-" \
+              CROSS_COMPILE="aarch64-linux-gnu-" \
+              TARGET_BUILD_VARIANT=user \
+              KCFLAGS="-O3" \
+              -j$(nproc --all)
+
+            repack_kernel "vanilla"
+          fi
+
+          # Collect modules
           find out/ -name "*.ko" -exec cp {} artifact-modules/ \; 2>/dev/null || true
+          rm -f stock_boot.img
 
       - name: Upload boot.img
         uses: actions/upload-artifact@v4
         with:
-          name: boot.img
-          path: artifact-boot/boot.img
+          name: boot-${{ matrix.flavor }}
+          path: artifact-boot/
 
       - name: Upload Image
         uses: actions/upload-artifact@v4
         with:
-          name: Image
-          path: artifact-image/Image
+          name: Image-${{ matrix.flavor }}
+          path: artifact-image/
 
       - name: Upload Kernel Modules
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-modules
+          name: kernel-modules-${{ matrix.flavor }}
           path: artifact-modules/
