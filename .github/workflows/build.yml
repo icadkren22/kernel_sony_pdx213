@@ -292,4 +292,4 @@ jobs:
           gh release create "$TAG_NAME" release-assets/* \
             --title "$RELEASE_TITLE" \
             --notes-file release_notes.md \
-            --clobber
+            --target "${{ github.sha }}"
