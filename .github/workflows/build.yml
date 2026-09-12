@@ -245,23 +245,65 @@ jobs:
         run: |
           mkdir -p release-assets
 
-          # Collect all boot.img and kernel Images
-          find all-artifacts/ -type f \( -name "*.img" -o -name "Image-*" \) -exec cp {} release-assets/ \;
-
-          # Package modules into tarballs if any were built
-          for dir in all-artifacts/kernel-modules-*; do
-            if [ -d "$dir" ] && find "$dir" -name "*.ko" | grep -q .; then
-              flavor=$(basename "$dir" | sed 's/kernel-modules-//')
-              tar -czf "release-assets/modules-${flavor}.tar.gz" -C "$dir" .
-            fi
-          done
-
-          # Download and unpack ReSukiSU Manager release
+          # 1. Download and unpack ReSukiSU Manager release
           echo "Downloading ReSukiSU Manager APK..."
           curl -LSs "https://nightly.link/ReSukiSU/ReSukiSU/workflows/build-manager/main/Manager-release.zip" -o Manager-release.zip
           unzip -q Manager-release.zip -d resukisu_apk
-          find resukisu_apk -type f -name "*arm64*.apk" -exec cp {} release-assets/ \;
+          APK_FILE=$(find resukisu_apk -type f -name "*arm64*.apk" | head -n1)
+          APK_NAME=$(basename "$APK_FILE")
+
+          # Extract KSU version code from apk filename (e.g. 35136)
+          KSU_VER=$(echo "$APK_NAME" | grep -oP '_\K[0-9]+(?=-arm64)' || echo "35136")
+
+          # Extract SUSFS version from patch (e.g. 2.3.0)
+          curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/Patch/susfs_patch_to_4.19.patch" -o /tmp/susfs.patch
+          SUSFS_VER=$(grep -m1 -oP 'define SUSFS_VERSION "\K[^"]+' /tmp/susfs.patch | sed 's/^v//' || echo "2.3.0")
+          rm -f /tmp/susfs.patch
+
+          echo "Detected versions: KSU=${KSU_VER}, SUSFS=${SUSFS_VER}"
+          echo "KSU_VER=${KSU_VER}" >> $GITHUB_ENV
+          echo "SUSFS_VER=${SUSFS_VER}" >> $GITHUB_ENV
+          echo "APK_NAME=${APK_NAME}" >> $GITHUB_ENV
+
+          # Move APK
+          cp "$APK_FILE" release-assets/
           rm -rf Manager-release.zip resukisu_apk
+
+          # Copy and rename boot images
+          [ -f all-artifacts/boot-susfs/boot-susfs-full.img ] && cp all-artifacts/boot-susfs/boot-susfs-full.img "release-assets/boot-resukisu${KSU_VER}-susfs${SUSFS_VER}-full.img"
+          [ -f all-artifacts/boot-susfs/boot-susfs-min.img ]  && cp all-artifacts/boot-susfs/boot-susfs-min.img  "release-assets/boot-resukisu${KSU_VER}-susfs${SUSFS_VER}-min.img"
+          [ -f all-artifacts/boot-manualhook/boot-manualhook.img ] && cp all-artifacts/boot-manualhook/boot-manualhook.img "release-assets/boot-resukisu${KSU_VER}-manualhook.img"
+          [ -f all-artifacts/boot-vanilla/boot-vanilla.img ] && cp all-artifacts/boot-vanilla/boot-vanilla.img "release-assets/boot-vanilla.img"
+
+          # Copy and rename standalone Images
+          [ -f all-artifacts/Image-susfs/Image-susfs-full ] && cp all-artifacts/Image-susfs/Image-susfs-full "release-assets/Image-resukisu${KSU_VER}-susfs${SUSFS_VER}-full"
+          [ -f all-artifacts/Image-susfs/Image-susfs-min ]  && cp all-artifacts/Image-susfs/Image-susfs-min  "release-assets/Image-resukisu${KSU_VER}-susfs${SUSFS_VER}-min"
+          [ -f all-artifacts/Image-manualhook/Image-manualhook ] && cp all-artifacts/Image-manualhook/Image-manualhook "release-assets/Image-resukisu${KSU_VER}-manualhook"
+          [ -f all-artifacts/Image-vanilla/Image-vanilla ] && cp all-artifacts/Image-vanilla/Image-vanilla "release-assets/Image-vanilla"
+
+          # Package modules into individual zip archives
+          for dir in all-artifacts/kernel-modules-*; do
+            if [ -d "$dir" ] && find "$dir" -name "*.ko" | grep -q .; then
+              flavor=$(basename "$dir" | sed 's/kernel-modules-//')
+              if [ "$flavor" = "susfs" ]; then
+                mod_name="modules-resukisu${KSU_VER}-susfs${SUSFS_VER}.zip"
+              elif [ "$flavor" = "manualhook" ]; then
+                mod_name="modules-resukisu${KSU_VER}-manualhook.zip"
+              else
+                mod_name="modules-${flavor}.zip"
+              fi
+              (cd "$dir" && zip -9 -r "$GITHUB_WORKSPACE/release-assets/$mod_name" .)
+            fi
+          done
+
+          # Compress each .img and Image file into its own individual .zip
+          for f in release-assets/boot-*.img release-assets/Image-*; do
+            if [ -f "$f" ]; then
+              fname=$(basename "$f")
+              zipname="${fname%.img}.zip"
+              (cd release-assets && zip -9 -m "$zipname" "$fname")
+            fi
+          done
 
           echo "=== Release Assets Ready ==="
           ls -lh release-assets/
@@ -271,25 +313,31 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG_NAME="build-${{ github.run_number }}"
-          RELEASE_TITLE="Kernel pdx213 Build #${{ github.run_number }}"
+          RELEASE_TITLE="Kernel pdx213 Build #${{ github.run_number }} (ReSukiSU ${KSU_VER} | SuSFS v${SUSFS_VER})"
 
-          cat << 'EOF' > release_notes.md
-          ## Sony Xperia 10 III (`pdx213`) Kernel Build #${{ github.run_number }}
-          - **Commit**: `${{ github.sha }}`
-          - **Branch**: `${{ github.ref_name }}`
+          cat << EOF > release_notes.md
+          ## Sony Xperia 10 III (\`pdx213\`) Kernel Build #${{ github.run_number }}
+          - **Commit**: \`${{ github.sha }}\`
+          - **Branch**: \`${{ github.ref_name }}\`
           - **Toolchain**: Android Clang r596125 (LLVM 22) -O3
+          - **ReSukiSU Version Code**: \`${KSU_VER}\`
+          - **SuSFS Version**: \`v${SUSFS_VER}\`
 
           ### Flash Instructions
-          Flash your desired boot image via fastboot:
-          ```bash
-          fastboot flash boot boot-<flavor>.img
-          ```
+          Download the desired \`.zip\` file, extract it, and flash the boot image via fastboot:
+          \`\`\`bash
+          unzip boot-*.zip
+          fastboot flash boot boot-*.img
+          \`\`\`
 
-          ### Included Files
-          - `boot-*.img`: Flashable boot images
-          - `Image-*`: Standalone kernel binaries
-          - `modules-*.tar.gz`: Kernel modules (if compiled)
-          - `ReSukiSU_*_arm64-v8a-release.apk`: Latest ReSukiSU Manager app
+          ### Included Files (Individually Compressed)
+          - \`boot-resukisu${KSU_VER}-susfs${SUSFS_VER}-full.zip\`: Contains \`boot-resukisu${KSU_VER}-susfs${SUSFS_VER}-full.img\`
+          - \`boot-resukisu${KSU_VER}-susfs${SUSFS_VER}-min.zip\`: Contains \`boot-resukisu${KSU_VER}-susfs${SUSFS_VER}-min.img\`
+          - \`boot-resukisu${KSU_VER}-manualhook.zip\`: Contains \`boot-resukisu${KSU_VER}-manualhook.img\`
+          - \`boot-vanilla.zip\`: Contains \`boot-vanilla.img\`
+          - \`Image-*.zip\`: Uncompressed kernel binaries
+          - \`modules-*.zip\`: Kernel modules
+          - \`${APK_NAME}\`: Compatible ReSukiSU Manager app
           EOF
 
           gh release create "$TAG_NAME" release-assets/* \
