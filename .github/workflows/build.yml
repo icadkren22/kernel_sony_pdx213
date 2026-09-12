@@ -225,3 +225,71 @@ jobs:
         with:
           name: kernel-modules-${{ matrix.flavor }}
           path: artifact-modules/
+
+  release:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-artifacts
+
+      - name: Prepare Assets & Download ReSukiSU Manager
+        run: |
+          mkdir -p release-assets
+
+          # Collect all boot.img and kernel Images
+          find all-artifacts/ -type f \( -name "*.img" -o -name "Image-*" \) -exec cp {} release-assets/ \;
+
+          # Package modules into tarballs if any were built
+          for dir in all-artifacts/kernel-modules-*; do
+            if [ -d "$dir" ] && find "$dir" -name "*.ko" | grep -q .; then
+              flavor=$(basename "$dir" | sed 's/kernel-modules-//')
+              tar -czf "release-assets/modules-${flavor}.tar.gz" -C "$dir" .
+            fi
+          done
+
+          # Download and unpack ReSukiSU Manager release
+          echo "Downloading ReSukiSU Manager APK..."
+          curl -LSs "https://nightly.link/ReSukiSU/ReSukiSU/workflows/build-manager/main/Manager-release.zip" -o Manager-release.zip
+          unzip -q Manager-release.zip -d resukisu_apk
+          find resukisu_apk -type f -name "*arm64*.apk" -exec cp {} release-assets/ \;
+          rm -rf Manager-release.zip resukisu_apk
+
+          echo "=== Release Assets Ready ==="
+          ls -lh release-assets/
+
+      - name: Publish GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="build-${{ github.run_number }}"
+          RELEASE_TITLE="Kernel pdx213 Build #${{ github.run_number }}"
+
+          cat << 'EOF' > release_notes.md
+          ## Sony Xperia 10 III (`pdx213`) Kernel Build #${{ github.run_number }}
+          - **Commit**: `${{ github.sha }}`
+          - **Branch**: `${{ github.ref_name }}`
+          - **Toolchain**: Android Clang r596125 (LLVM 22) -O3
+
+          ### Flash Instructions
+          Flash your desired boot image via fastboot:
+          ```bash
+          fastboot flash boot boot-<flavor>.img
+          ```
+
+          ### Included Files
+          - `boot-*.img`: Flashable boot images
+          - `Image-*`: Standalone kernel binaries
+          - `modules-*.tar.gz`: Kernel modules (if compiled)
+          - `ReSukiSU_*_arm64-v8a-release.apk`: Latest ReSukiSU Manager app
+          EOF
+
+          gh release create "$TAG_NAME" release-assets/* \
+            --title "$RELEASE_TITLE" \
+            --notes-file release_notes.md \
+            --clobber
