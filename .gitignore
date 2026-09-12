@@ -1,0 +1,4 @@
+out/
+build-artifacts/
+clang-r530567/
+.flavor_env

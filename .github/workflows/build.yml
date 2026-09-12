@@ -2,6 +2,17 @@ name: Build Kernel
 
 on:
   workflow_dispatch:
+    inputs:
+      flavor:
+        description: 'Kernel flavor to build (all, susfs, manualhook, vanilla)'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - susfs
+          - manualhook
+          - vanilla
   push:
     branches:
       - master
@@ -9,16 +20,36 @@ on:
 
 jobs:
   build:
-    name: Build Kernel (PDX213)
+    name: Build Kernel (${{ matrix.flavor }})
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        flavor: [susfs, manualhook, vanilla]
 
     steps:
+      # Filter flavor on manual dispatch
+      - name: Check Flavor Selection
+        id: check_flavor
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            SELECTED_FLAVOR="${{ github.event.inputs.flavor }}"
+            if [ "$SELECTED_FLAVOR" != "all" ] && [ "$SELECTED_FLAVOR" != "${{ matrix.flavor }}" ]; then
+              echo "Skipping matrix flavor ${{ matrix.flavor }} because $SELECTED_FLAVOR was selected."
+              echo "skip=true" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          fi
+          echo "skip=false" >> $GITHUB_OUTPUT
+
       - name: Checkout Kernel Source
+        if: steps.check_flavor.outputs.skip != 'true'
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
       - name: Install Build Dependencies
+        if: steps.check_flavor.outputs.skip != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -38,95 +69,286 @@ jobs:
             xz-utils
 
       - name: Download and Setup Clang (clang-r596125)
+        if: steps.check_flavor.outputs.skip != 'true'
         run: |
           mkdir -p clang
-          curl --retry 5 --retry-delay 3 --retry-all-errors -fSLo clang.tar.gz https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source/clang-r596125.tar.gz
+          curl -LSs "https://github.com/icadkren22/toolchains/releases/download/clang-r596125/clang-r596125.tar.gz" -o clang.tar.gz
           tar -xzf clang.tar.gz -C clang
           rm -f clang.tar.gz
           echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
 
       - name: Verify Clang Version
+        if: steps.check_flavor.outputs.skip != 'true'
         run: |
           clang --version
 
-      - name: Setup ReSukiSU
-        run: |
-          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
-
-      - name: Download and Apply SUSFS Patches
-        run: |
-          # 1. Download susfs patch
-          curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/Patch/susfs_patch_to_4.19.patch" -o susfs_patch_to_4.19.patch
-          
-          # 2. Patch the susfs patch
-          patch -p0 susfs_patch_to_4.19.patch < .github/patches/patch_for_susfs_4.19.patch
-
-          # 3. Apply the patched susfs patch to the kernel
-          patch -p1 < susfs_patch_to_4.19.patch
-
-          # 4. Run inline hook patches
-          curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/susfs_inline_hook_patches.sh" | bash
-
-      - name: Build Kernel
-        run: |
-          mkdir -p out
-          make ARCH=arm64 O=out \
-            CC=clang LLVM=1 LLVM_IAS=1 CLANG_TRIPLE="aarch64-linux-gnu-" \
-            CROSS_COMPILE="aarch64-linux-gnu-" \
-            TARGET_BUILD_VARIANT=user \
-            vendor/lito-perf_defconfig KBUILD_DIFFCONFIG=pdx213_diffconfig
-
-          make ARCH=arm64 O=out \
-            CC=clang LLVM=1 LLVM_IAS=1 CLANG_TRIPLE="aarch64-linux-gnu-" \
-            CROSS_COMPILE="aarch64-linux-gnu-" \
-            TARGET_BUILD_VARIANT=user \
-            KCFLAGS="-O3" \
-            -j$(nproc --all)
-
       - name: Download magiskboot
+        if: steps.check_flavor.outputs.skip != 'true'
         run: |
           curl -LSs "https://raw.githubusercontent.com/Uevo001/magiskboot-linux/main/x86/magiskboot" -o magiskboot
           chmod +x magiskboot
 
-      - name: Repack boot.img
+      # Setup flavor: SUSFS
+      - name: Setup SUSFS & ReSukiSU
+        if: steps.check_flavor.outputs.skip != 'true' && matrix.flavor == 'susfs'
         run: |
-          # Decompress stock boot.img
-          gunzip -c boot_X-FLASH-ALL-8A63.img.gz > boot.img
+          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
+          curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/Patch/susfs_patch_to_4.19.patch" -o susfs_patch_to_4.19.patch
+          patch -p0 susfs_patch_to_4.19.patch < .github/patches/patch_for_susfs_4.19.patch
+          patch -p1 < susfs_patch_to_4.19.patch
+          curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/susfs_inline_hook_patches.sh" | bash
 
-          # Unpack stock boot.img
-          mkdir -p bootimg-work
-          cp boot.img bootimg-work/
-          cd bootimg-work
-          ../magiskboot unpack boot.img
-
-          # Replace kernel with newly built Image
-          cp ../out/arch/arm64/boot/Image kernel
-
-          # Repack
-          ../magiskboot repack boot.img ../build-repacked.img
-          cd ..
-
-      - name: Prepare Artifacts
+      # Setup flavor: Manual Hook
+      - name: Setup KernelSU Manual Hook
+        if: steps.check_flavor.outputs.skip != 'true' && matrix.flavor == 'manualhook'
         run: |
-          mkdir -p artifact-boot artifact-image artifact-modules
-          cp build-repacked.img artifact-boot/boot.img
-          cp out/arch/arm64/boot/Image artifact-image/Image
+          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
+          patch -p1 < .github/patches/manualhook.patch
+
+      # Setup flavor: Vanilla
+      - name: Setup Vanilla
+        if: steps.check_flavor.outputs.skip != 'true' && matrix.flavor == 'vanilla'
+        run: |
+          echo "Building clean vanilla kernel without KernelSU hooks"
+
+      # Helper Function / Build Steps
+      - name: Build & Repack Kernel
+        if: steps.check_flavor.outputs.skip != 'true'
+        run: |
+          mkdir -p out artifact-boot artifact-image artifact-modules
+          gunzip -c boot_X-FLASH-ALL-8A63.img.gz > stock_boot.img
+
+          repack_kernel() {
+            local variant_name="$1"
+            mkdir -p "bootimg-work-${variant_name}"
+            cp stock_boot.img "bootimg-work-${variant_name}/boot.img"
+            cd "bootimg-work-${variant_name}"
+            ../magiskboot unpack boot.img
+            cp ../out/arch/arm64/boot/Image kernel
+            ../magiskboot repack boot.img "../artifact-boot/boot-${variant_name}.img"
+            cd ..
+            rm -rf "bootimg-work-${variant_name}"
+            cp out/arch/arm64/boot/Image "artifact-image/Image-${variant_name}"
+          }
+
+          if [ "${{ matrix.flavor }}" = "susfs" ]; then
+            # 1. Build Minimal SUSFS
+            echo "=== Building SUSFS (Minimal) ==="
+            make ARCH=arm64 O=out \
+              CC=clang LLVM=1 LLVM_IAS=1 CLANG_TRIPLE="aarch64-linux-gnu-" \
+              CROSS_COMPILE="aarch64-linux-gnu-" \
+              TARGET_BUILD_VARIANT=user \
+              vendor/lito-perf_defconfig KBUILD_DIFFCONFIG="pdx213_diffconfig ksu_susfs_min.config"
+
+            make ARCH=arm64 O=out \
+              CC=clang LLVM=1 LLVM_IAS=1 CLANG_TRIPLE="aarch64-linux-gnu-" \
+              CROSS_COMPILE="aarch64-linux-gnu-" \
+              TARGET_BUILD_VARIANT=user \
+              KCFLAGS="-O3" \
+              -j$(nproc --all)
+
+            repack_kernel "susfs-min"
+
+            # 2. Incremental Build Full SUSFS (re-uses existing out/ object files)
+            echo "=== Incremental Building SUSFS (Full) ==="
+            make ARCH=arm64 O=out \
+              CC=clang LLVM=1 LLVM_IAS=1 CLANG_TRIPLE="aarch64-linux-gnu-" \
+              CROSS_COMPILE="aarch64-linux-gnu-" \
+              TARGET_BUILD_VARIANT=user \
+              vendor/lito-perf_defconfig KBUILD_DIFFCONFIG="pdx213_diffconfig ksu_susfs_full.config"
+
+            make ARCH=arm64 O=out \
+              CC=clang LLVM=1 LLVM_IAS=1 CLANG_TRIPLE="aarch64-linux-gnu-" \
+              CROSS_COMPILE="aarch64-linux-gnu-" \
+              TARGET_BUILD_VARIANT=user \
+              KCFLAGS="-O3" \
+              -j$(nproc --all)
+
+            repack_kernel "susfs-full"
+
+          elif [ "${{ matrix.flavor }}" = "manualhook" ]; then
+            echo "=== Building Manual Hook ==="
+            make ARCH=arm64 O=out \
+              CC=clang LLVM=1 LLVM_IAS=1 CLANG_TRIPLE="aarch64-linux-gnu-" \
+              CROSS_COMPILE="aarch64-linux-gnu-" \
+              TARGET_BUILD_VARIANT=user \
+              vendor/lito-perf_defconfig KBUILD_DIFFCONFIG="pdx213_diffconfig ksu_manual.config"
+
+            make ARCH=arm64 O=out \
+              CC=clang LLVM=1 LLVM_IAS=1 CLANG_TRIPLE="aarch64-linux-gnu-" \
+              CROSS_COMPILE="aarch64-linux-gnu-" \
+              TARGET_BUILD_VARIANT=user \
+              KCFLAGS="-O3" \
+              -j$(nproc --all)
+
+            repack_kernel "manualhook"
+
+          elif [ "${{ matrix.flavor }}" = "vanilla" ]; then
+            echo "=== Building Vanilla ==="
+            make ARCH=arm64 O=out \
+              CC=clang LLVM=1 LLVM_IAS=1 CLANG_TRIPLE="aarch64-linux-gnu-" \
+              CROSS_COMPILE="aarch64-linux-gnu-" \
+              TARGET_BUILD_VARIANT=user \
+              vendor/lito-perf_defconfig KBUILD_DIFFCONFIG="pdx213_diffconfig"
+
+            make ARCH=arm64 O=out \
+              CC=clang LLVM=1 LLVM_IAS=1 CLANG_TRIPLE="aarch64-linux-gnu-" \
+              CROSS_COMPILE="aarch64-linux-gnu-" \
+              TARGET_BUILD_VARIANT=user \
+              KCFLAGS="-O3" \
+              -j$(nproc --all)
+
+            repack_kernel "vanilla"
+          fi
+
+          # Collect modules
           find out/ -name "*.ko" -exec cp {} artifact-modules/ \; 2>/dev/null || true
+          rm -f stock_boot.img
 
       - name: Upload boot.img
+        if: steps.check_flavor.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: boot.img
-          path: artifact-boot/boot.img
+          name: boot-${{ matrix.flavor }}
+          path: artifact-boot/
 
       - name: Upload Image
+        if: steps.check_flavor.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: Image
-          path: artifact-image/Image
+          name: Image-${{ matrix.flavor }}
+          path: artifact-image/
 
       - name: Upload Kernel Modules
+        if: steps.check_flavor.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-modules
+          name: kernel-modules-${{ matrix.flavor }}
           path: artifact-modules/
+
+  release:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-artifacts
+
+      - name: Prepare Assets & Download ReSukiSU Manager
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p release-assets
+
+          # 1. Download and unpack ReSukiSU Manager release
+          echo "Downloading ReSukiSU Manager APK..."
+          curl -LSs "https://nightly.link/ReSukiSU/ReSukiSU/workflows/build-manager/main/Manager-release.zip" -o Manager-release.zip
+          unzip -q Manager-release.zip -d resukisu_apk
+          APK_FILE=$(find resukisu_apk -type f -name "*arm64*.apk" | head -n1)
+          APK_NAME=$(basename "$APK_FILE")
+
+          # Extract KSU version code from apk filename (e.g. 35136)
+          KSU_VER=$(echo "$APK_NAME" | grep -oP '_\K[0-9]+(?=-arm64)' || echo "35136")
+
+          # Query latest successful ReSukiSU build-manager run ID
+          RESUKISU_RUN_ID=$(gh api "repos/ReSukiSU/ReSukiSU/actions/workflows/build-manager.yml/runs?status=success&branch=main&per_page=1" --jq '.workflow_runs[0].id' 2>/dev/null || echo "")
+
+          # Extract SUSFS version from patch (e.g. 2.3.0)
+          curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/Patch/susfs_patch_to_4.19.patch" -o /tmp/susfs.patch
+          SUSFS_VER=$(grep -m1 -oP 'define SUSFS_VERSION "\K[^"]+' /tmp/susfs.patch | sed 's/^v//' || echo "2.3.0")
+          rm -f /tmp/susfs.patch
+
+          echo "Detected versions: KSU=${KSU_VER}, SUSFS=${SUSFS_VER}, RESUKISU_RUN_ID=${RESUKISU_RUN_ID}"
+          echo "KSU_VER=${KSU_VER}" >> $GITHUB_ENV
+          echo "SUSFS_VER=${SUSFS_VER}" >> $GITHUB_ENV
+          echo "APK_NAME=${APK_NAME}" >> $GITHUB_ENV
+          echo "RESUKISU_RUN_ID=${RESUKISU_RUN_ID}" >> $GITHUB_ENV
+
+          # Move APK
+          cp "$APK_FILE" release-assets/
+          rm -rf Manager-release.zip resukisu_apk
+
+          # Copy and rename boot images
+          [ -f all-artifacts/boot-susfs/boot-susfs-full.img ] && cp all-artifacts/boot-susfs/boot-susfs-full.img "release-assets/boot-resukisu${KSU_VER}-susfs${SUSFS_VER}-full.img"
+          [ -f all-artifacts/boot-susfs/boot-susfs-min.img ]  && cp all-artifacts/boot-susfs/boot-susfs-min.img  "release-assets/boot-resukisu${KSU_VER}-susfs${SUSFS_VER}-min.img"
+          [ -f all-artifacts/boot-manualhook/boot-manualhook.img ] && cp all-artifacts/boot-manualhook/boot-manualhook.img "release-assets/boot-resukisu${KSU_VER}-manualhook.img"
+          [ -f all-artifacts/boot-vanilla/boot-vanilla.img ] && cp all-artifacts/boot-vanilla/boot-vanilla.img "release-assets/boot-vanilla.img"
+
+          # Copy and rename standalone Images
+          [ -f all-artifacts/Image-susfs/Image-susfs-full ] && cp all-artifacts/Image-susfs/Image-susfs-full "release-assets/Image-resukisu${KSU_VER}-susfs${SUSFS_VER}-full"
+          [ -f all-artifacts/Image-susfs/Image-susfs-min ]  && cp all-artifacts/Image-susfs/Image-susfs-min  "release-assets/Image-resukisu${KSU_VER}-susfs${SUSFS_VER}-min"
+          [ -f all-artifacts/Image-manualhook/Image-manualhook ] && cp all-artifacts/Image-manualhook/Image-manualhook "release-assets/Image-resukisu${KSU_VER}-manualhook"
+          [ -f all-artifacts/Image-vanilla/Image-vanilla ] && cp all-artifacts/Image-vanilla/Image-vanilla "release-assets/Image-vanilla"
+
+          # Package modules into individual zip archives
+          for dir in all-artifacts/kernel-modules-*; do
+            if [ -d "$dir" ] && find "$dir" -name "*.ko" | grep -q .; then
+              flavor=$(basename "$dir" | sed 's/kernel-modules-//')
+              if [ "$flavor" = "susfs" ]; then
+                mod_name="modules-resukisu${KSU_VER}-susfs${SUSFS_VER}.zip"
+              elif [ "$flavor" = "manualhook" ]; then
+                mod_name="modules-resukisu${KSU_VER}-manualhook.zip"
+              else
+                mod_name="modules-${flavor}.zip"
+              fi
+              (cd "$dir" && zip -9 -r "$GITHUB_WORKSPACE/release-assets/$mod_name" .)
+            fi
+          done
+
+          # Compress each .img and Image file into its own individual .zip
+          for f in release-assets/boot-*.img release-assets/Image-*; do
+            if [ -f "$f" ]; then
+              fname=$(basename "$f")
+              zipname="${fname%.img}.zip"
+              (cd release-assets && zip -9 -m "$zipname" "$fname")
+            fi
+          done
+
+          echo "=== Release Assets Ready ==="
+          ls -lh release-assets/
+
+      - name: Publish GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="build-${{ github.run_number }}"
+          RELEASE_TITLE="Kernel pdx213 Build #${{ github.run_number }} (ReSukiSU ${KSU_VER} | SuSFS v${SUSFS_VER})"
+
+          cat << EOF > release_notes.md
+          ## Sony Xperia 10 III (\`pdx213\`) Kernel Build #${{ github.run_number }}
+          - **Commit**: \`${{ github.sha }}\`
+          - **Branch**: \`${{ github.ref_name }}\`
+          - **Toolchain**: Android Clang r596125 (LLVM 22) -O3
+          - **ReSukiSU Version Code**: \`${KSU_VER}\`
+          - **ReSukiSU Run ID**: \`${RESUKISU_RUN_ID}\`
+          - **SuSFS Version**: \`v${SUSFS_VER}\`
+
+          ### Flash Instructions
+          Download the desired \`.zip\` file, extract it, and flash the boot image via fastboot:
+          \`\`\`bash
+          unzip boot-*.zip
+          fastboot flash boot boot-*.img
+          \`\`\`
+
+          ### Included Files (Individually Compressed)
+          - \`boot-resukisu${KSU_VER}-susfs${SUSFS_VER}-full.zip\`: Contains \`boot-resukisu${KSU_VER}-susfs${SUSFS_VER}-full.img\`
+          - \`boot-resukisu${KSU_VER}-susfs${SUSFS_VER}-min.zip\`: Contains \`boot-resukisu${KSU_VER}-susfs${SUSFS_VER}-min.img\`
+          - \`boot-resukisu${KSU_VER}-manualhook.zip\`: Contains \`boot-resukisu${KSU_VER}-manualhook.img\`
+          - \`boot-vanilla.zip\`: Contains \`boot-vanilla.img\`
+          - \`Image-*.zip\`: Uncompressed kernel binaries
+          - \`modules-*.zip\`: Kernel modules
+          - \`${APK_NAME}\`: Compatible ReSukiSU Manager app
+          EOF
+
+          gh release create "$TAG_NAME" release-assets/* \
+            --repo "${{ github.repository }}" \
+            --title "$RELEASE_TITLE" \
+            --notes-file release_notes.md \
+            --target "${{ github.sha }}"
