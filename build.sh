@@ -11,8 +11,12 @@ else
     KBUILD_DIFFCONFIG="pdx213_diffconfig"
 fi
 
-if [ -d "$SCRIPT_DIR/clang-r530567/bin" ]; then
+if [ -d "$SCRIPT_DIR/clang-r596125/bin" ]; then
+    CLANG_DIR="$SCRIPT_DIR/clang-r596125"
+elif [ -d "$SCRIPT_DIR/clang-r530567/bin" ]; then
     CLANG_DIR="$SCRIPT_DIR/clang-r530567"
+elif [ -d "/home/ica2322/sus/clang-r596125/bin" ]; then
+    CLANG_DIR="/home/ica2322/sus/clang-r596125"
 else
     CLANG_DIR="/home/ica2322/sus/clang-r530567"
 fi

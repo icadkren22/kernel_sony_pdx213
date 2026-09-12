@@ -72,7 +72,7 @@ jobs:
         if: steps.check_flavor.outputs.skip != 'true'
         run: |
           mkdir -p clang
-          curl --retry 5 --retry-delay 3 --retry-all-errors -fSLo clang.tar.gz https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source/clang-r596125.tar.gz
+          curl -LSs "https://github.com/icadkren22/toolchains/releases/download/clang-r596125/clang-r596125.tar.gz" -o clang.tar.gz
           tar -xzf clang.tar.gz -C clang
           rm -f clang.tar.gz
           echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH

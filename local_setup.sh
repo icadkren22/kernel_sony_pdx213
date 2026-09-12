@@ -11,14 +11,17 @@ echo " Setting up kernel flavor: $FLAVOR"
 echo " (Options: susfs-min, susfs-full, manualhook, vanilla)"
 echo "========================================================="
 
-CLANG_DIR="$SCRIPT_DIR/clang-r530567"
+CLANG_DIR="$SCRIPT_DIR/clang-r596125"
 
 echo "[1/4] Checking Clang toolchain..."
+if [ ! -f "$CLANG_DIR/bin/clang" ] && [ -f "$SCRIPT_DIR/clang-r530567/bin/clang" ]; then
+    CLANG_DIR="$SCRIPT_DIR/clang-r530567"
+fi
+
 if [ ! -f "$CLANG_DIR/bin/clang" ]; then
-    echo "Clang not found. Downloading..."
+    echo "Clang not found. Downloading clang-r596125 from GitHub..."
     mkdir -p "$CLANG_DIR"
-    curl --retry 5 --retry-delay 3 --retry-all-errors -fSLo /tmp/clang.tar.gz \
-        "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source/clang-r596125.tar.gz"
+    curl -LSs "https://github.com/icadkren22/toolchains/releases/download/clang-r596125/clang-r596125.tar.gz" -o /tmp/clang.tar.gz
     echo "Extracting Clang..."
     tar -xzf /tmp/clang.tar.gz -C "$CLANG_DIR"
     rm -f /tmp/clang.tar.gz
