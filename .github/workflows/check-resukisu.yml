@@ -1,0 +1,50 @@
+name: Check ReSukiSU Updates
+
+on:
+  schedule:
+    - cron: '0 */2 * * *'  # Runs every 2 hours
+  workflow_dispatch:        # Allows manual trigger anytime
+
+jobs:
+  check:
+    name: Check Latest ReSukiSU Build
+    runs-on: ubuntu-22.04
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Check for New ReSukiSU Successful Run
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "=== Checking Upstream ReSukiSU Build Status ==="
+          
+          # 1. Fetch latest successful run from ReSukiSU main branch
+          RUN_DATA=$(gh api "repos/ReSukiSU/ReSukiSU/actions/workflows/build-manager.yml/runs?status=success&branch=main&per_page=1" --jq '.workflow_runs[0]')
+          
+          LATEST_RUN_ID=$(echo "$RUN_DATA" | jq -r '.id')
+          LATEST_SHA=$(echo "$RUN_DATA" | jq -r '.head_sha')
+          LATEST_RUN_NUM=$(echo "$RUN_DATA" | jq -r '.run_number')
+          
+          if [ -z "$LATEST_RUN_ID" ] || [ "$LATEST_RUN_ID" = "null" ]; then
+            echo "Error: Could not retrieve latest successful run from ReSukiSU."
+            exit 1
+          fi
+          
+          echo "Latest successful ReSukiSU run: #$LATEST_RUN_NUM (ID: $LATEST_RUN_ID, SHA: $LATEST_SHA)"
+          
+          # 2. Fetch our repository's latest release notes
+          LATEST_RELEASE_BODY=$(gh api "repos/${{ github.repository }}/releases/latest" --jq '.body' 2>/dev/null || echo "")
+          CURRENT_BUILT_RUN_ID=$(echo "$LATEST_RELEASE_BODY" | grep -oP 'ReSukiSU Run ID\*\*: `\K[0-9]+' || echo "")
+          
+          echo "Current built ReSukiSU run ID in our releases: '${CURRENT_BUILT_RUN_ID}'"
+          
+          # 3. Compare and trigger if new
+          if [ "$LATEST_RUN_ID" != "$CURRENT_BUILT_RUN_ID" ]; then
+            echo "==> New ReSukiSU build detected ($LATEST_RUN_ID != $CURRENT_BUILT_RUN_ID)!"
+            echo "Triggering Build Kernel workflow..."
+            gh workflow run build.yml --repo "${{ github.repository }}" --ref master
+            echo "Build triggered successfully."
+          else
+            echo "==> Already up-to-date with latest ReSukiSU build. No action needed."
+          fi

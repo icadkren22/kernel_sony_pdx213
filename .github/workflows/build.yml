@@ -242,6 +242,8 @@ jobs:
           path: all-artifacts
 
       - name: Prepare Assets & Download ReSukiSU Manager
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p release-assets
 
@@ -255,15 +257,19 @@ jobs:
           # Extract KSU version code from apk filename (e.g. 35136)
           KSU_VER=$(echo "$APK_NAME" | grep -oP '_\K[0-9]+(?=-arm64)' || echo "35136")
 
+          # Query latest successful ReSukiSU build-manager run ID
+          RESUKISU_RUN_ID=$(gh api "repos/ReSukiSU/ReSukiSU/actions/workflows/build-manager.yml/runs?status=success&branch=main&per_page=1" --jq '.workflow_runs[0].id' 2>/dev/null || echo "")
+
           # Extract SUSFS version from patch (e.g. 2.3.0)
           curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/Patch/susfs_patch_to_4.19.patch" -o /tmp/susfs.patch
           SUSFS_VER=$(grep -m1 -oP 'define SUSFS_VERSION "\K[^"]+' /tmp/susfs.patch | sed 's/^v//' || echo "2.3.0")
           rm -f /tmp/susfs.patch
 
-          echo "Detected versions: KSU=${KSU_VER}, SUSFS=${SUSFS_VER}"
+          echo "Detected versions: KSU=${KSU_VER}, SUSFS=${SUSFS_VER}, RESUKISU_RUN_ID=${RESUKISU_RUN_ID}"
           echo "KSU_VER=${KSU_VER}" >> $GITHUB_ENV
           echo "SUSFS_VER=${SUSFS_VER}" >> $GITHUB_ENV
           echo "APK_NAME=${APK_NAME}" >> $GITHUB_ENV
+          echo "RESUKISU_RUN_ID=${RESUKISU_RUN_ID}" >> $GITHUB_ENV
 
           # Move APK
           cp "$APK_FILE" release-assets/
@@ -321,6 +327,7 @@ jobs:
           - **Branch**: \`${{ github.ref_name }}\`
           - **Toolchain**: Android Clang r596125 (LLVM 22) -O3
           - **ReSukiSU Version Code**: \`${KSU_VER}\`
+          - **ReSukiSU Run ID**: \`${RESUKISU_RUN_ID}\`
           - **SuSFS Version**: \`v${SUSFS_VER}\`
 
           ### Flash Instructions
