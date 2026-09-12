@@ -233,6 +233,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
       - name: Download Build Artifacts
         uses: actions/download-artifact@v4
         with:
@@ -290,6 +293,7 @@ jobs:
           EOF
 
           gh release create "$TAG_NAME" release-assets/* \
+            --repo "${{ github.repository }}" \
             --title "$RELEASE_TITLE" \
             --notes-file release_notes.md \
             --target "${{ github.sha }}"
