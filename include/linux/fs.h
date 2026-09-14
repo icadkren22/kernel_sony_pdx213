@@ -2841,6 +2841,8 @@ static inline errseq_t filemap_sample_wb_err(struct address_space *mapping)
 extern int vfs_fsync_range(struct file *file, loff_t start, loff_t end,
 			   int datasync);
 extern int vfs_fsync(struct file *file, int datasync);
+extern int sync_file_range(struct file *file, loff_t offset, loff_t nbytes,
+			   unsigned int flags);
 
 /*
  * Sync the bytes written if this was a synchronous write.  Expect ki_pos
