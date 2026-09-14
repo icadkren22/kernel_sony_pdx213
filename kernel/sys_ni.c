@@ -37,6 +37,9 @@ asmlinkage long sys_ni_syscall(void)
  */
 
 COND_SYSCALL(io_setup);
+COND_SYSCALL(io_uring_setup);
+COND_SYSCALL(io_uring_enter);
+COND_SYSCALL(io_uring_register);
 COND_SYSCALL_COMPAT(io_setup);
 COND_SYSCALL(io_destroy);
 COND_SYSCALL(io_submit);

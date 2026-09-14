@@ -213,6 +213,7 @@ extern unsigned int kobjsize(const void *objp);
 #define VM_LOCKONFAULT	0x00080000	/* Lock the pages covered when they are faulted in */
 #define VM_ACCOUNT	0x00100000	/* Is a VM accounted object */
 #define VM_NORESERVE	0x00200000	/* should the VM suppress accounting */
+#define VM_READAHEAD_PAGES	16
 #define VM_HUGETLB	0x00400000	/* Huge TLB Page VM */
 #define VM_SYNC		0x00800000	/* Synchronous page faults */
 #define VM_ARCH_1	0x01000000	/* Architecture-specific flag */
@@ -2770,6 +2771,7 @@ static inline struct page *follow_page(struct vm_area_struct *vma,
 #define FOLL_REMOTE	0x2000	/* we are working on non-current tsk/mm */
 #define FOLL_COW	0x4000	/* internal GUP flag */
 #define FOLL_ANON	0x8000	/* don't do file mappings */
+#define FOLL_LONGTERM	0x10000	/* mapping lifetime is indefinite */
 
 static inline int vm_fault_to_errno(vm_fault_t vm_fault, int foll_flags)
 {
