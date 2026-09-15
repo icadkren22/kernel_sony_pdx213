@@ -3919,7 +3919,8 @@ static ssize_t f2fs_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 			if (!f2fs_overwrite_io(inode, iocb->ki_pos,
 						iov_iter_count(from)) ||
 				f2fs_has_inline_data(inode) ||
-				f2fs_force_buffered_io(inode, iocb, from)) {
+				((iocb->ki_flags & IOCB_DIRECT) &&
+				 f2fs_force_buffered_io(inode, iocb, from))) {
 				clear_inode_flag(inode, FI_NO_PREALLOC);
 				inode_unlock(inode);
 				ret = -EAGAIN;

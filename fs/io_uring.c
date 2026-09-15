@@ -1459,14 +1459,6 @@ static int io_write(struct io_kiocb *req, const struct sqe_submit *s,
 
 	iov_count = iov_iter_count(&iter);
 
-	ret = -EAGAIN;
-	if (force_nonblock && !(kiocb->ki_flags & IOCB_DIRECT)) {
-		/* If ->needs_lock is true, we're already in async context. */
-		if (!s->needs_lock)
-			io_async_list_note(WRITE, req, iov_count);
-		goto out_free;
-	}
-
 	ret = rw_verify_area(WRITE, file, &kiocb->ki_pos, iov_count);
 	if (!ret) {
 		ssize_t ret2;
@@ -1494,15 +1486,19 @@ static int io_write(struct io_kiocb *req, const struct sqe_submit *s,
 			io_rw_done(kiocb, ret2);
 		} else {
 			/*
-			 * If ->needs_lock is true, we're already in async
-			 * context.
+			 * Release freeze protection before punting to async,
+			 * so the async worker can acquire it cleanly upon retry.
 			 */
+			if (req->flags & REQ_F_ISREG) {
+				__sb_writers_acquired(file_inode(file)->i_sb,
+							SB_FREEZE_WRITE);
+				file_end_write(file);
+			}
 			if (!s->needs_lock)
 				io_async_list_note(WRITE, req, iov_count);
 			ret = -EAGAIN;
 		}
 	}
-out_free:
 	kfree(iovec);
 	return ret;
 }
