@@ -1477,6 +1477,8 @@ static int io_write(struct io_kiocb *req, const struct sqe_submit *s,
 						SB_FREEZE_WRITE);
 		}
 		kiocb->ki_flags |= IOCB_WRITE;
+		if (!(kiocb->ki_flags & IOCB_DIRECT))
+			kiocb->ki_flags &= ~IOCB_NOWAIT;
 
 		if (file->f_op->write_iter)
 			ret2 = call_write_iter(file, kiocb, &iter);
