@@ -1020,7 +1020,13 @@ static int smb5_usb_get_prop(struct power_supply *psy,
 		val->intval = get_client_vote(chg->usb_icl_votable, PD_VOTER);
 		break;
 	case POWER_SUPPLY_PROP_CURRENT_MAX:
-		rc = smblib_get_prop_input_current_max(chg, val);
+		if (is_client_vote_enabled(chg->usb_icl_votable, APP_ICL_VOTER)) {
+			val->intval = get_client_vote(chg->usb_icl_votable,
+							APP_ICL_VOTER);
+			rc = 0;
+		} else {
+			rc = smblib_get_prop_input_current_max(chg, val);
+		}
 		break;
 	case POWER_SUPPLY_PROP_TYPE:
 		val->intval = POWER_SUPPLY_TYPE_USB_PD;
@@ -1230,6 +1236,13 @@ static int smb5_usb_set_prop(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_SDP_CURRENT_MAX:
 		rc = smblib_set_prop_sdp_current_max(chg, val);
 		break;
+	case POWER_SUPPLY_PROP_CURRENT_MAX:
+		if (val->intval <= 0)
+			rc = vote(chg->usb_icl_votable, APP_ICL_VOTER, false, 0);
+		else
+			rc = vote(chg->usb_icl_votable, APP_ICL_VOTER, true, val->intval);
+		power_supply_changed(chg->usb_psy);
+		break;
 	case POWER_SUPPLY_PROP_CONNECTOR_HEALTH:
 		chg->connector_health = val->intval;
 		power_supply_changed(chg->usb_psy);
@@ -1276,6 +1289,7 @@ static int smb5_usb_prop_is_writeable(struct power_supply *psy,
 		enum power_supply_property psp)
 {
 	switch (psp) {
+	case POWER_SUPPLY_PROP_CURRENT_MAX:
 	case POWER_SUPPLY_PROP_CTM_CURRENT_MAX:
 	case POWER_SUPPLY_PROP_CONNECTOR_HEALTH:
 	case POWER_SUPPLY_PROP_THERM_ICL_LIMIT:
