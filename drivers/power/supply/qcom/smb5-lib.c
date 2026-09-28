@@ -839,7 +839,7 @@ static int smblib_set_usb_pd_fsw(struct smb_charger *chg, int voltage)
 	return rc;
 }
 
-#define CONT_AICL_HEADROOM_MV		1000
+#define CONT_AICL_HEADROOM_MV		3000
 #define AICL_THRESHOLD_MV_IN_CC		5000
 static int smblib_set_usb_pd_allowed_voltage(struct smb_charger *chg,
 					int min_allowed_uv, int max_allowed_uv)
@@ -879,6 +879,8 @@ static int smblib_set_usb_pd_allowed_voltage(struct smb_charger *chg,
 	aicl_threshold = min_allowed_uv / 1000 - CONT_AICL_HEADROOM_MV;
 	if (chg->adapter_cc_mode)
 		aicl_threshold = min(aicl_threshold, AICL_THRESHOLD_MV_IN_CC);
+	else
+		aicl_threshold = min(aicl_threshold, 6000);
 
 	rc = smblib_set_charge_param(chg, &chg->param.aicl_cont_threshold,
 							aicl_threshold);
