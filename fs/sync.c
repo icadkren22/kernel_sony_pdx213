@@ -282,11 +282,10 @@ SYSCALL_DEFINE1(fdatasync, unsigned int, fd)
  * already-instantiated disk blocks, there are no guarantees here that the data
  * will be available after a crash.
  */
-int ksys_sync_file_range(int fd, loff_t offset, loff_t nbytes,
-			 unsigned int flags)
+int sync_file_range(struct file *file, loff_t offset, loff_t nbytes,
+		    unsigned int flags)
 {
 	int ret;
-	struct fd f;
 	struct address_space *mapping;
 	loff_t endbyte;			/* inclusive */
 	umode_t i_mode;
@@ -326,36 +325,48 @@ int ksys_sync_file_range(int fd, loff_t offset, loff_t nbytes,
 	else
 		endbyte--;		/* inclusive */
 
-	ret = -EBADF;
-	f = fdget(fd);
-	if (!f.file)
-		goto out;
-
-	i_mode = file_inode(f.file)->i_mode;
+	i_mode = file_inode(file)->i_mode;
 	ret = -ESPIPE;
 	if (!S_ISREG(i_mode) && !S_ISBLK(i_mode) && !S_ISDIR(i_mode) &&
 			!S_ISLNK(i_mode))
-		goto out_put;
+		goto out;
 
-	mapping = f.file->f_mapping;
+	mapping = file->f_mapping;
 	ret = 0;
 	if (flags & SYNC_FILE_RANGE_WAIT_BEFORE) {
-		ret = file_fdatawait_range(f.file, offset, endbyte);
+		ret = file_fdatawait_range(file, offset, endbyte);
 		if (ret < 0)
-			goto out_put;
+			goto out;
 	}
 
 	if (flags & SYNC_FILE_RANGE_WRITE) {
 		ret = __filemap_fdatawrite_range(mapping, offset, endbyte,
 						 WB_SYNC_NONE);
 		if (ret < 0)
-			goto out_put;
+			goto out;
 	}
 
 	if (flags & SYNC_FILE_RANGE_WAIT_AFTER)
-		ret = file_fdatawait_range(f.file, offset, endbyte);
+		ret = file_fdatawait_range(file, offset, endbyte);
 
-out_put:
+out:
+	return ret;
+}
+EXPORT_SYMBOL(sync_file_range);
+
+int ksys_sync_file_range(int fd, loff_t offset, loff_t nbytes,
+			 unsigned int flags)
+{
+	int ret;
+	struct fd f;
+
+	ret = -EBADF;
+	f = fdget(fd);
+	if (!f.file)
+		goto out;
+
+	ret = sync_file_range(f.file, offset, nbytes, flags);
+
 	fdput(f);
 out:
 	return ret;

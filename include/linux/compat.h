@@ -481,6 +481,8 @@ static inline int compat_timespec_compare(struct compat_timespec *lhs,
 }
 
 extern int get_compat_sigset(sigset_t *set, const compat_sigset_t __user *compat);
+extern int set_compat_user_sigmask(const compat_sigset_t __user *umask,
+				   size_t sigsetsize);
 
 /*
  * Defined inline such that size can be compile time constant, which avoids

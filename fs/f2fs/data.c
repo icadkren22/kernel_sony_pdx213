@@ -3647,8 +3647,11 @@ static ssize_t f2fs_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
 	if (err)
 		return err < 0 ? err : 0;
 
-	if (f2fs_force_buffered_io(inode, iocb, iter))
+	if (f2fs_force_buffered_io(inode, iocb, iter)) {
+		if (iov_iter_rw(iter) == WRITE)
+			return -EINVAL;
 		return 0;
+	}
 
 	do_opu = allow_outplace_dio(inode, iocb, iter);
 

@@ -2906,6 +2906,45 @@ int sigprocmask(int how, sigset_t *set, sigset_t *oldset)
 	return 0;
 }
 
+int set_user_sigmask(const sigset_t __user *umask, size_t sigsetsize)
+{
+	sigset_t kmask;
+
+	if (!umask)
+		return 0;
+	if (sigsetsize != sizeof(sigset_t))
+		return -EINVAL;
+	if (copy_from_user(&kmask, umask, sizeof(sigset_t)))
+		return -EFAULT;
+
+	set_restore_sigmask();
+	current->saved_sigmask = current->blocked;
+	set_current_blocked(&kmask);
+
+	return 0;
+}
+
+#ifdef CONFIG_COMPAT
+int set_compat_user_sigmask(const compat_sigset_t __user *umask,
+			    size_t sigsetsize)
+{
+	sigset_t kmask;
+
+	if (!umask)
+		return 0;
+	if (sigsetsize != sizeof(compat_sigset_t))
+		return -EINVAL;
+	if (get_compat_sigset(&kmask, umask))
+		return -EFAULT;
+
+	set_restore_sigmask();
+	current->saved_sigmask = current->blocked;
+	set_current_blocked(&kmask);
+
+	return 0;
+}
+#endif
+
 /**
  *  sys_rt_sigprocmask - change the list of currently blocked signals
  *  @how: whether to add, remove, or set signals

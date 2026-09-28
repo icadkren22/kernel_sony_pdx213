@@ -2235,4 +2235,13 @@ config ARCH_HAS_SYNC_CORE_BEFORE_USERMODE
 config ARCH_HAS_SYSCALL_WRAPPER
 	def_bool n
 
+config IO_URING
+	bool "Enable IO uring support" if EXPERT
+	select ANON_INODES
+	default y
+	help
+	  This option enables support for the io_uring interface, enabling
+	  applications to submit and complete IO through submission and
+	  completion rings that are shared between the kernel and userspace.
+
 source "init/Kconfig.gki"
