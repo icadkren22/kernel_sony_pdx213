@@ -7159,6 +7159,23 @@ irqreturn_t typec_state_change_irq_handler(int irq, void *data)
 	}
 
 	typec_mode = smblib_get_prop_typec_mode(chg);
+#if defined(CONFIG_SOMC_CHARGER_EXTENSION)
+	if (typec_mode == POWER_SUPPLY_TYPEC_NONE &&
+	    chg->typec_mode != POWER_SUPPLY_TYPEC_NONE) {
+		/*
+		 * Transient CC contact bounce debounce: when the cable wiggles,
+		 * the CC line may momentarily float for a few ms. Wait 30ms and
+		 * re-check before declaring a disconnect.
+		 */
+		usleep_range(30000, 31000);
+		typec_mode = smblib_get_prop_typec_mode(chg);
+		if (typec_mode != POWER_SUPPLY_TYPEC_NONE) {
+			smblib_dbg(chg, PR_INTERRUPT,
+				"Ignoring transient CC contact bounce\n");
+			return IRQ_HANDLED;
+		}
+	}
+#endif
 	if (chg->sink_src_mode != UNATTACHED_MODE
 			&& (typec_mode != chg->typec_mode))
 		smblib_handle_rp_change(chg, typec_mode);

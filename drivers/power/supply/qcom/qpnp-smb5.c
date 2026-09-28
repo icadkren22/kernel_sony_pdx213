@@ -2785,7 +2785,7 @@ static int smb5_configure_typec(struct smb_charger *chg)
 #if defined(CONFIG_SOMC_CHARGER_EXTENSION)
 	rc = smblib_masked_write(chg, USBIN_LOAD_CFG_REG,
 		USBIN_IN_COLLAPSE_GF_SEL_MASK | USBIN_AICL_STEP_TIMING_SEL_MASK,
-		USBIN_AICL_STEP_TIMING_SEL_30MS);
+		USBIN_AICL_STEP_TIMING_SEL_30MS | USBIN_IN_COLLAPSE_GF_SEL_MASK);
 	if (rc < 0)
 		dev_err(chg->dev,
 			"Couldn't set USBIN_LOAD_CFG_REG rc=%d\n",
