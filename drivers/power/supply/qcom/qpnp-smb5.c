@@ -603,9 +603,6 @@ static int smb5_parse_dt_misc(struct smb5 *chip, struct device_node *node)
 
 	chip->dt.disable_suspend_on_collapse = of_property_read_bool(node,
 					"qcom,disable-suspend-on-collapse");
-#if defined(CONFIG_SOMC_CHARGER_EXTENSION)
-	chip->dt.disable_suspend_on_collapse = true;
-#endif
 	chg->smb_pull_up = -EINVAL;
 	of_property_read_u32(node, "qcom,smb-internal-pull-kohm",
 					&chg->smb_pull_up);

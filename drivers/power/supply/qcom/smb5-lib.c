@@ -5143,14 +5143,6 @@ int smblib_set_prop_pd_active(struct smb_charger *chg,
 				dev_err(chg->dev, "Couldn't enable secondary charger rc=%d\n",
 					rc);
 		}
-
-		if (chg->pd_active == POWER_SUPPLY_PD_PPS_ACTIVE) {
-			rc = smblib_masked_write(chg, USBIN_AICL_OPTIONS_CFG_REG,
-					SUSPEND_ON_COLLAPSE_USBIN_BIT, 0);
-			if (rc < 0)
-				smblib_err(chg, "Couldn't disable suspend-on-collapse rc=%d\n",
-						rc);
-		}
 	} else {
 		vote(chg->usb_icl_votable, PD_VOTER, false, 0);
 		vote(chg->limited_irq_disable_votable, CHARGER_TYPE_VOTER,
