@@ -4319,6 +4319,17 @@ static ssize_t select_pdo_store(struct device *dev,
 		goto out;
 	}
 
+	/*
+	 * When transitioning from initial fixed 5V to PPS, allow the source
+	 * charger 5000ms to settle its internal state machine before sending
+	 * the new request, avoiding premature timeouts and reset cycles.
+	 */
+	if (pd->selected_pdo == 1 &&
+	    (PD_SRC_PDO_TYPE(pd->received_pdos[pdo - 1]) == PD_SRC_PDO_TYPE_AUGMENTED)) {
+		usbpd_info(&pd->dev, "delaying PPS request by 5000ms for source settle\n");
+		msleep(5000);
+	}
+
 	ret = pd_select_pdo(pd, pdo, uv, ua);
 	if (ret)
 		goto out;
