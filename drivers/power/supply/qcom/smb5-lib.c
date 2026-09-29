@@ -5046,8 +5046,8 @@ static void smblib_check_pps_startup_icl(struct smb_charger *chg)
 	int voltage_uv = max(chg->voltage_min_uv, chg->voltage_max_uv);
 
 	if (chg->pd_active == POWER_SUPPLY_PD_PPS_ACTIVE) {
-		if (voltage_uv <= 5500000)
-			vote(chg->usb_icl_votable, PPS_STARTUP_VOTER, true, 1500000);
+		if (voltage_uv <= 6200000)
+			vote(chg->usb_icl_votable, PPS_STARTUP_VOTER, true, 1000000);
 		else
 			vote(chg->usb_icl_votable, PPS_STARTUP_VOTER, false, 0);
 	} else {
