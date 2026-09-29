@@ -5043,10 +5043,18 @@ int smblib_set_prop_typec_select_rp(struct smb_charger *chg,
 
 static void smblib_check_pps_startup_icl(struct smb_charger *chg)
 {
-	int voltage_uv = max(chg->voltage_min_uv, chg->voltage_max_uv);
-
+	/*
+	 * Use voltage_min_uv as the threshold, NOT voltage_max_uv.
+	 * For a voltage increase (e.g. 5V -> 7.74V), policy_engine sets
+	 * pd_voltage_max *before* PS_RDY (during Accept handling) and
+	 * pd_voltage_min *after* PS_RDY. Releasing the cap on pd_voltage_max
+	 * would cause the phone to pull full current while the charger is still
+	 * ramping voltage, collapsing VBUS and triggering a Hard Reset.
+	 * Only releasing on pd_voltage_min guarantees the charger has already
+	 * completed the voltage transition.
+	 */
 	if (chg->pd_active == POWER_SUPPLY_PD_PPS_ACTIVE) {
-		if (voltage_uv <= 6200000)
+		if (chg->voltage_min_uv <= 6200000)
 			vote(chg->usb_icl_votable, PPS_STARTUP_VOTER, true, 1000000);
 		else
 			vote(chg->usb_icl_votable, PPS_STARTUP_VOTER, false, 0);
@@ -5104,7 +5112,6 @@ int smblib_set_prop_pd_voltage_max(struct smb_charger *chg,
 	}
 
 	chg->voltage_max_uv = max_uv;
-	smblib_check_pps_startup_icl(chg);
 	power_supply_changed(chg->usb_main_psy);
 
 	return rc;
