@@ -92,7 +92,7 @@ jobs:
       - name: Setup SUSFS & ReSukiSU
         if: steps.check_flavor.outputs.skip != 'true' && matrix.flavor == 'susfs'
         run: |
-          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s 5b76b884c75f729a220bb317aa4a4fc78f0e0e9c
+          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
           curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/Patch/susfs_patch_to_4.19.patch" -o susfs_patch_to_4.19.patch
           patch -p0 susfs_patch_to_4.19.patch < .github/patches/patch_for_susfs_4.19.patch
           patch -p1 < susfs_patch_to_4.19.patch
