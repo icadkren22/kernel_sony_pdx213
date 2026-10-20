@@ -549,9 +549,9 @@ static int smb5_parse_dt_misc(struct smb5 *chip, struct device_node *node)
 		return -EINVAL;
 	}
 
-	chip->dt.hvdcp_disable = of_property_read_bool(node,
-						"qcom,hvdcp-disable");
-	chg->hvdcp_disable = chip->dt.hvdcp_disable;
+	/* Force enable HVDCP (Quick Charge 2.0/3.0) */
+	chip->dt.hvdcp_disable = false;
+	chg->hvdcp_disable = false;
 
 	chip->dt.hvdcp_autonomous = of_property_read_bool(node,
 						"qcom,hvdcp-autonomous-enable");
