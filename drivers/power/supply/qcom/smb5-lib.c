@@ -1095,6 +1095,18 @@ void smblib_hvdcp_detect_enable(struct smb_charger *chg, bool enable)
 	if (rc < 0)
 		smblib_err(chg, "failed to write USBIN_OPTIONS_1_CFG rc=%d\n",
 				rc);
+
+	if (enable) {
+		/* Enforce 9V maximum for HVDCP (QC2/QC3) */
+		chg->qc2_unsupported_voltage = QC2_NON_COMPLIANT_12V;
+		chg->qc2_max_pulses = HVDCP_PULSE_COUNT_MAX_QC2_9V;
+		smblib_masked_write(chg, HVDCP_PULSE_COUNT_MAX_REG,
+				HVDCP_PULSE_COUNT_MAX_QC2_MASK,
+				HVDCP_PULSE_COUNT_MAX_QC2_9V);
+		smblib_masked_write(chg, USBIN_ADAPTER_ALLOW_CFG_REG,
+				USBIN_ADAPTER_ALLOW_MASK,
+				USBIN_ADAPTER_ALLOW_5V_TO_9V);
+	}
 }
 
 static void smblib_hvdcp_detect_try_enable(struct smb_charger *chg, bool enable)
@@ -3715,6 +3727,8 @@ int smblib_get_prop_usb_voltage_max_design(struct smb_charger *chg,
 		/* else, fallthrough */
 	case POWER_SUPPLY_TYPE_USB_HVDCP_3P5:
 	case POWER_SUPPLY_TYPE_USB_HVDCP_3:
+		val->intval = MICRO_9V;
+		break;
 	case POWER_SUPPLY_TYPE_USB_PD:
 		if (chg->chg_param.smb_version == PMI632_SUBTYPE)
 			val->intval = MICRO_9V;
@@ -3745,10 +3759,7 @@ int smblib_get_prop_usb_voltage_max(struct smb_charger *chg,
 		/* else, fallthrough */
 	case POWER_SUPPLY_TYPE_USB_HVDCP_3P5:
 	case POWER_SUPPLY_TYPE_USB_HVDCP_3:
-		if (chg->chg_param.smb_version == PMI632_SUBTYPE)
-			val->intval = MICRO_9V;
-		else
-			val->intval = MICRO_12V;
+		val->intval = MICRO_9V;
 		break;
 	case POWER_SUPPLY_TYPE_USB_PD:
 		val->intval = chg->voltage_max_uv;

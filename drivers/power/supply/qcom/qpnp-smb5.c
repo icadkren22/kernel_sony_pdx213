@@ -630,19 +630,17 @@ static int smb5_parse_dt_misc(struct smb5 *chip, struct device_node *node)
 
 	of_property_read_u32(node, "qcom,hvdcp3-max-icl-ua",
 					&chg->chg_param.hvdcp3_max_icl_ua);
-	if (chg->chg_param.hvdcp3_max_icl_ua <= 0)
-		chg->chg_param.hvdcp3_max_icl_ua = MICRO_3PA;
+	if (chg->chg_param.hvdcp3_max_icl_ua <= 0 || chg->chg_param.hvdcp3_max_icl_ua > 2500000)
+		chg->chg_param.hvdcp3_max_icl_ua = 2500000;
 
 	of_property_read_u32(node, "qcom,hvdcp2-max-icl-ua",
 					&chg->chg_param.hvdcp2_max_icl_ua);
-	if (chg->chg_param.hvdcp2_max_icl_ua <= 0)
-		chg->chg_param.hvdcp2_max_icl_ua = MICRO_3PA;
+	if (chg->chg_param.hvdcp2_max_icl_ua <= 0 || chg->chg_param.hvdcp2_max_icl_ua > 2500000)
+		chg->chg_param.hvdcp2_max_icl_ua = 2500000;
 
 	of_property_read_u32(node, "qcom,hvdcp2-12v-max-icl-ua",
 					&chg->chg_param.hvdcp2_12v_max_icl_ua);
-	if (chg->chg_param.hvdcp2_12v_max_icl_ua <= 0)
-		chg->chg_param.hvdcp2_12v_max_icl_ua =
-			chg->chg_param.hvdcp2_max_icl_ua;
+	chg->chg_param.hvdcp2_12v_max_icl_ua = 2500000;
 
 	/* Used only in Adapter CV mode of operation */
 	of_property_read_u32(node, "qcom,qc4-max-icl-ua",
@@ -3298,6 +3296,16 @@ static int smb5_init_hw(struct smb5 *chip)
 	/* Disable HVDCP and authentication algorithm if specified in DT */
 	if (chg->hvdcp_disable)
 		smblib_hvdcp_detect_enable(chg, false);
+
+	/* Limit HVDCP (Quick Charge) voltage to 9V maximum */
+	chg->qc2_unsupported_voltage = QC2_NON_COMPLIANT_12V;
+	chg->qc2_max_pulses = HVDCP_PULSE_COUNT_MAX_QC2_9V;
+	smblib_masked_write(chg, HVDCP_PULSE_COUNT_MAX_REG,
+			HVDCP_PULSE_COUNT_MAX_QC2_MASK,
+			HVDCP_PULSE_COUNT_MAX_QC2_9V);
+	smblib_masked_write(chg, USBIN_ADAPTER_ALLOW_CFG_REG,
+			USBIN_ADAPTER_ALLOW_MASK,
+			USBIN_ADAPTER_ALLOW_5V_TO_9V);
 
 	rc = smb5_init_connector_type(chg);
 	if (rc < 0) {
